@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>THE BABY SHOP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<style>
+:root{
+    --bg-grad: linear-gradient(135deg,#667eea,#764ba2);
+    --card-bg:#fff;
+    --text:#222;
+    --sub:#666;
+}
+body.dark{
+    --bg-grad: linear-gradient(135deg,#1e1e2f,#121212);
+    --card-bg:#1f1f1f;
+    --text:#eee;
+    --sub:#aaa;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{
+    margin:0;width:100vw;height:100vh;
+    display:flex;justify-content:center;align-items:center;
+    background:var(--bg-grad);font-family:Roboto,Arial;
+}
+.app{
+    width:380px;background:var(--card-bg);color:var(--text);
+    border-radius:22px;padding:24px;
+    box-shadow:0 18px 45px rgba(0,0,0,.35);
+}
+.header{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:18px;
+}
+.shop-title{
+    font-size:18px;font-weight:700;color:#e74c3c;letter-spacing:1px;margin-bottom:4px;
+}
+.toggle{
+    background:none;border:none;cursor:pointer;
+    color:var(--text);font-size:26px;
+}
+.field{margin-bottom:18px}
+label{font-size:14px;color:var(--sub);margin-bottom:6px;display:block}
+input,select{
+    width:100%;padding:14px;border-radius:14px;
+    border:1px solid #ccc;font-size:16px;
+    background:transparent;color:var(--text);
+}
+.actions{
+    display:flex;justify-content:space-around;margin-top:20px;
+}
+.fab{
+    width:64px;height:64px;border-radius:50%;
+    border:none;cursor:pointer;color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 8px 20px rgba(0,0,0,.4);
+}
+.gen{background:#667eea}
+.dwn{background:#2ecc71}
+.shr{background:#f39c12}
+.qr-area{margin-top:28px;display:flex;justify-content:center}
+.qr-frame{
+    background:#fff;padding:20px;border-radius:24px;
+    border:2px solid #ddd;text-align:center;
+    box-shadow:0 4px 15px rgba(0,0,0,0.15);
+}
+.qr-frame canvas{width:230px!important;height:230px!important}
+.hint{text-align:center;margin-top:14px;font-size:13px;color:var(--sub)}
+</style>
+</head>
+
+<body>
+<div class="app">
+    <div class="header">
+        <div>
+           
+            <h2>THE BABY SHOP</h2>
+        </div>
+        <div>
+            <button class="toggle" onclick="openAdmin()">
+                <span class="material-icons" id="lockIcon">lock</span>
+            </button>
+            <button class="toggle" onclick="toggleDark()">
+                <span class="material-icons">dark_mode</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="field">
+        <label>Amount</label>
+        <input type="number" id="amount" placeholder="Enter amount">
+    </div>
+
+    <div class="field">
+        <label>Pay To</label>
+        <select id="upi"></select>
+    </div>
+
+    <div class="actions">
+        <button class="fab gen" onclick="generateQR()">
+            <span class="material-icons">qr_code</span>
+        </button>
+        <button class="fab dwn" onclick="downloadQR()">
+            <span class="material-icons">download</span>
+        </button>
+        <button class="fab shr" onclick="shareQR()">
+            <span class="material-icons">share</span>
+        </button>
+    </div>
+
+    <div class="qr-area" id="qrcode"></div>
+    <div class="hint">Scan to complete payment securely</div>
+</div>
+
+<script>
+/* ===== CONFIG ===== */
+const ADMIN_HASH = btoa("1234@secure");
+const ADMIN_TIMEOUT = 5 * 60 * 1000;
+
+let upiList = JSON.parse(localStorage.getItem("upiList")) || [
+    {label:"Account 1", value:"masterjain@apl"},
+    {label:"Account 2", value:"pritambhansali5@oksbi"}
+];
+
+let adminSession = JSON.parse(localStorage.getItem("adminSession")) || {
+    unlocked:false,
+    lastActive:0
+};
+
+const upiSelect = document.getElementById("upi");
+const amountInput = document.getElementById("amount");
+const qrcode = document.getElementById("qrcode");
+
+renderUPI();
+updateLockIcon();
+
+/* ===== UI ===== */
+function toggleDark(){
+    document.body.classList.toggle("dark");
+}
+
+/* ===== ADMIN ===== */
+function openAdmin(){
+    if(upiSelect.selectedIndex < 1){
+        alert("Please select account first");
+        return;
+    }
+
+    if(isAdminUnlocked()){
+        adminMenu();
+        touchAdmin();
+        return;
+    }
+
+    const pwd = prompt("Enter admin password");
+    if(!pwd) return;
+
+    if(btoa(pwd) !== ADMIN_HASH){
+        alert("Invalid password");
+        return;
+    }
+
+    adminSession.unlocked = true;
+    touchAdmin();
+    saveAdmin();
+    adminMenu();
+}
+
+function adminMenu(){
+    const action = prompt(
+        "ADMIN MENU\n\n" +
+        "1: Add Account\n" +
+        "2: Edit Account\n" +
+        "3: Delete Account"
+    );
+
+    if(action=="1") addUPI();
+    if(action=="2") editUPI();
+    if(action=="3") deleteUPI();
+}
+
+function isAdminUnlocked(){
+    if(!adminSession.unlocked) return false;
+    if(Date.now() - adminSession.lastActive > ADMIN_TIMEOUT){
+        lockAdmin();
+        return false;
+    }
+    return true;
+}
+
+function touchAdmin(){
+    adminSession.lastActive = Date.now();
+    saveAdmin();
+}
+
+function lockAdmin(){
+    adminSession.unlocked = false;
+    saveAdmin();
+}
+
+function saveAdmin(){
+    localStorage.setItem("adminSession",JSON.stringify(adminSession));
+    updateLockIcon();
+}
+
+function updateLockIcon(){
+    document.getElementById("lockIcon").textContent =
+        adminSession.unlocked ? "lock_open" : "lock";
+}
+
+/* ===== UPI CRUD ===== */
+function addUPI(){
+    const label = prompt("Enter Account Name");
+    if(!label) return;
+
+    const value = prompt("Enter UPI ID");
+    if(!value) return;
+
+    upiList.push({label,value});
+    saveUPI();
+}
+
+function editUPI(){
+    const i = upiSelect.selectedIndex - 1;
+    if(i < 0) return;
+
+    const acc = upiList[i];
+    const newLabel = prompt("Edit Account Name", acc.label);
+    if(newLabel) acc.label = newLabel;
+
+    const newUPI = prompt("Edit UPI ID", acc.value);
+    if(newUPI) acc.value = newUPI;
+
+    saveUPI();
+}
+
+function deleteUPI(){
+    const i = upiSelect.selectedIndex - 1;
+    if(i < 0) return;
+
+    if(confirm("Delete selected account?")){
+        upiList.splice(i,1);
+        saveUPI();
+    }
+}
+
+function saveUPI(){
+    localStorage.setItem("upiList",JSON.stringify(upiList));
+    renderUPI();
+}
+
+function renderUPI(){
+    upiSelect.innerHTML = `<option value="">Select account</option>`;
+    upiList.forEach(u=>{
+        const o=document.createElement("option");
+        o.value=u.value;
+        o.textContent=u.label;
+        upiSelect.appendChild(o);
+    });
+}
+
+/* ===== QR ===== */
+function generateQR(){
+    const amount = amountInput.value;
+    const upi = upiSelect.value;
+
+    if(!amount || amount<=0) return alert("Invalid amount");
+    if(!upi) return alert("Select account");
+
+    const url = `upi://pay?pa=${upi}&pn=THE BABY SHOP&am=${amount}&cu=INR`;
+
+    qrcode.innerHTML="";
+    const frame=document.createElement("div");
+    frame.className="qr-frame";
+    qrcode.appendChild(frame);
+
+    new QRCode(frame,{text:url,width:230,height:230});
+}
+
+function createImage(){
+ 
+    const qrCanvas = document.querySelector("#qrcode canvas");
+    if(!qrCanvas) return null;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 450;
+    canvas.height = 600;
+    const ctx = canvas.getContext("2d");
+
+    // 1️⃣ Use page background theme
+    // Read computed CSS variable from body
+    const bodyStyles = getComputedStyle(document.body);
+    const bgGradient = bodyStyles.getPropertyValue('--bg-grad') || 'linear-gradient(135deg,#667eea,#764ba2)';
+
+    // Create gradient for canvas (approximate)
+    // We'll parse two colors from linear-gradient
+    const match = bgGradient.match(/linear-gradient\(.*,(#[0-9a-fA-F]{6}),\s*(#[0-9a-fA-F]{6})\)/);
+    const color1 = match ? match[1] : '#667eea';
+    const color2 = match ? match[2] : '#764ba2';
+
+    const grad = ctx.createLinearGradient(0,0,0,canvas.height);
+    grad.addColorStop(0,color1);
+    grad.addColorStop(1,color2);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // 2️⃣ Curved card for QR
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#ccc";
+    ctx.lineWidth = 3;
+    ctx.shadowColor = "rgba(0,0,0,0.18)";
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    ctx.roundRect(25,25,400,550,25);
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // 3️⃣ THE BABY SHOP heading
+    const textGrad = ctx.createLinearGradient(0,0,canvas.width,0);
+    textGrad.addColorStop(0,"#f1c40f");
+    textGrad.addColorStop(1,"#e67e22");
+    ctx.fillStyle = textGrad;
+    ctx.font = "bold 36px 'Times New Roman', serif";
+    ctx.textAlign = "center";
+    ctx.fillText("THE BABY SHOP", canvas.width/2, 70);
+
+    // 4️⃣ Pay To - purple
+    const upiSelect = document.getElementById("upi");
+    ctx.fillStyle = "#8e44ad";
+    ctx.font = "bold 20px Arial";
+    ctx.fillText("Pay To: " + upiSelect.options[upiSelect.selectedIndex].text, canvas.width/2, 120);
+
+    // 5️⃣ Scan & Pay - grey
+    ctx.fillStyle = "#7f8c8d";
+    ctx.font = "bold 18px Arial";
+    ctx.fillText("Scan & Pay", canvas.width/2, 150);
+
+    // 6️⃣ Curved QR frame
+    const qrSize = 250;
+    const qrX = (canvas.width - qrSize)/2;
+    const qrY = 180;
+
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#bdc3c7";
+    ctx.lineWidth = 4;
+    ctx.shadowColor = "rgba(0,0,0,0.15)";
+    ctx.shadowBlur = 20;
+
+    ctx.beginPath();
+    ctx.roundRect(qrX-10, qrY-10, qrSize+20, qrSize+20, 20);
+    ctx.fill();
+    ctx.stroke();
+
+    // Draw QR
+    ctx.shadowBlur = 0;
+    ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
+
+    // 7️⃣ Footer hints
+    ctx.fillStyle = "#34495e"; 
+    ctx.font = "14px Arial";
+    ctx.fillText("Scan with any UPI compatible app", canvas.width/2, qrY + qrSize + 40);
+    ctx.font = "12px Arial";
+    ctx.fillStyle = "#7f8c8d";
+    ctx.fillText("Secure • Fast • Trusted", canvas.width/2, qrY + qrSize + 65);
+
+    // 8️⃣ Powered by THE BABY SHOP
+    ctx.fillStyle = "#e74c3c";
+    ctx.font = "bold 14px Arial";
+    ctx.fillText("Powered by THE BABY SHOP", canvas.width/2, qrY + qrSize + 95);
+
+    return canvas.toDataURL("image/jpeg",1.0);
+}
+
+function downloadQR(){
+    const img=createImage();
+    if(!img) return alert("Generate QR first");
+    const a=document.createElement("a");
+    a.href=img;
+    a.download="payment_qr.jpg";
+    a.click();
+}
+
+async function shareQR(){
+    const img=createImage();
+    if(!img) return alert("Generate QR first");
+    const blob=await(await fetch(img)).blob();
+    navigator.share({
+        files:[new File([blob],"payment_qr.jpg",{type:"image/jpeg"})]
+    });
+}
+</script>
+</body>
+</html>
